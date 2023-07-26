@@ -125,7 +125,7 @@ namespace Clone_ADS_DB
 
                         // Using the average time taken per row (multiply by remainingRows first, as small times get divided to 0)
                         // estimage the remaing time
-                        long remainingTimeaverage = (rowWatch.ElapsedMilliseconds * remainingRows) / (startRow + dataTable.Rows.Count - 1);
+                        long remainingTimeaverage = rowWatch.ElapsedMilliseconds * remainingRows / (startRow + dataTable.Rows.Count - 1);
 
                         // Calculate the estimated time remaining
                         TimeSpan estimatedTimeRemaining = TimeSpan.FromMilliseconds(remainingTimeaverage);
