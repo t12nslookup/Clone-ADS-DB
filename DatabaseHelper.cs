@@ -120,14 +120,15 @@ namespace Clone_ADS_DB
                     // only bother reporting the "remaining time" if we're not finished.
                     if ((startRow + dataTable.Rows.Count - 1) < totalRowCount)
                     {
-                        // Calculate the average time taken per row
-                        long averageTimePerRow = rowWatch.ElapsedMilliseconds / (startRow + dataTable.Rows.Count - 1);
-
                         // Calculate the remaining rows to be copied
                         long remainingRows = totalRowCount - (startRow + dataTable.Rows.Count - 1);
 
+                        // Using the average time taken per row (multiply by remainingRows first, as small times get divided to 0)
+                        // estimage the remaing time
+                        long remainingTimeaverage = (rowWatch.ElapsedMilliseconds * remainingRows) / (startRow + dataTable.Rows.Count - 1);
+
                         // Calculate the estimated time remaining
-                        TimeSpan estimatedTimeRemaining = TimeSpan.FromMilliseconds(averageTimePerRow * remainingRows);
+                        TimeSpan estimatedTimeRemaining = TimeSpan.FromMilliseconds(remainingTimeaverage);
 
                         // Display time taken for this page and the estimated time remaining
                         elapsedTime = PrettyFormatTime(rowWatch.ElapsedMilliseconds);
@@ -147,7 +148,12 @@ namespace Clone_ADS_DB
         {
             List<IndexInfo> indexes = new();
 
-            string query = $"SELECT trim(INDEX_NAME) as index_name, trim([KEY]) as [Key] FROM INDEXES WHERE TABLE_NAME = '{tableName}'";
+            string query = $@"
+    SELECT trim(INDEX_NAME) as index_name, trim([KEY]) as [Key] 
+    FROM INDEXES 
+    WHERE TABLE_NAME = '{tableName}' 
+        and trim([KEY]) <> '' 
+        and trim(INDEX_NAME) <> ''";
             using (OdbcCommand command = new(query, sourceConnection))
             using (OdbcDataReader reader = command.ExecuteReader())
             {
