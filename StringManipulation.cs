@@ -85,6 +85,7 @@ namespace Clone_ADS_DB
         public static string ReplaceKey(string key)
         {
             // Handle the specific replacements for "+", "str", and "substr"
+            key = key.ToLower();
             key = Regex.Replace(key, @"\+", ",");
             key = Regex.Replace(key, @"upper\((.*?),(.*?)\)", "upper($1),upper($2)");
             key = Regex.Replace(key, @"str\(([^,]*?)\)", "$1");
