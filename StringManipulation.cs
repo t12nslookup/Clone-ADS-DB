@@ -75,7 +75,7 @@ namespace Clone_ADS_DB
                 string key = ReplaceKey(index.Key);
 
                 // Generate the SQL statement for index creation
-                string createIndexStatement = $"CREATE INDEX {index.Name} ON {destinationTableName} ({key})";
+                string createIndexStatement = $"CREATE INDEX {index.Name}_idx ON {destinationTableName} ({key})";
                 createIndexStatements.Add(createIndexStatement);
             }
 
