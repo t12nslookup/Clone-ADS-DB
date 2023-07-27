@@ -107,7 +107,12 @@ namespace Clone_ADS_DB
                                 foreach (DataColumn column in schemaTable.Columns)
                                 {
                                     object value = row[column.ColumnName];
-                                    upsertCommand.Parameters[$"@{column.ColumnName}"].Value = value; // != DBNull.Value ? value : null;
+                                    if (value is string stringValue)
+                                    {
+                                        value = string.IsNullOrWhiteSpace(stringValue) ? DBNull.Value : stringValue.Trim();
+                                    }
+                                    upsertCommand.Parameters[$"@{column.ColumnName}"].Value = value;
+
                                 }
 
                                 _ = upsertCommand.ExecuteNonQuery();
