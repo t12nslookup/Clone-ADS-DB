@@ -28,7 +28,7 @@ namespace Clone_ADS_DB
             string createTableQuery = $"CREATE TABLE IF NOT EXISTS {tableName} (";
             foreach (DataColumn column in schemaTable.Columns)
             {
-                createTableQuery += $"\"{column.ColumnName.ToLower()}\" {GetPostgreSQLType(column.DataType)}, ";
+                createTableQuery += $"\"{column.ColumnName.ToLower()}\" {GetPostgreSQLType(column)}, ";
             }
             createTableQuery = createTableQuery.TrimEnd(',', ' ') + ")";
             return createTableQuery;
@@ -49,14 +49,20 @@ namespace Clone_ADS_DB
             // + $"ON CONFLICT ({primaryKeyColumn}) DO UPDATE SET {updateColumns}";
         }
 
-
-        public static string GetPostgreSQLType(Type type)
+        public static string GetPostgreSQLType(DataColumn column)
         {
+            Type type = column.DataType;
+
+            if (type == typeof(DateTime))
+            {
+                string columnName = column.ColumnName.ToLower();
+                return columnName.EndsWith("time") ? "time" : columnName.EndsWith("date") ? "date" : "timestamp";
+            }
+
             return Type.GetTypeCode(type) switch
             {
                 TypeCode.Int32 => "integer",
                 TypeCode.String => "text",
-                TypeCode.DateTime => "timestamp",
                 TypeCode.Boolean => "boolean",
                 TypeCode.Decimal => "decimal",
                 // Add more mappings for other data types as needed
