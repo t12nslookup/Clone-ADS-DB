@@ -17,6 +17,9 @@ namespace Clone_ADS_DB
 
         public static void CreateTableFromSource(DataTable schemaTable, string destinationTableName, OdbcConnection sourceConnection, NpgsqlConnection destinationConnection)
         {
+            Stopwatch tableWatch = new();
+            tableWatch.Start();
+
             // Create a new table in the destination database based on the source schema
             NpgsqlCommand createTableCommand = new(GenerateCreateTableQuery(destinationTableName, schemaTable), destinationConnection);
             _ = createTableCommand.ExecuteNonQuery();
@@ -49,6 +52,13 @@ namespace Clone_ADS_DB
                     }
 
                 }
+                if (AppConfiguration.DebugMode)
+                {
+                    tableWatch.Stop();
+                    string elapsedTime = PrettyFormatTime(tableWatch.ElapsedMilliseconds);
+                    Console.WriteLine($"\r{destinationTableName}: Table created - Time taken to create: {elapsedTime}".PadRight(Console.WindowWidth - 1));
+                }
+
             }
         }
 
@@ -60,6 +70,9 @@ namespace Clone_ADS_DB
 
         public static void CopyDataFromSource(DataTable schemaTable, string destinationTableName, OdbcConnection sourceConnection, NpgsqlConnection destinationConnection)
         {
+            bool hasPrimaryKey = CheckIfTableHasPrimaryKey(destinationTableName, destinationConnection);
+            string primaryKeyColumns = hasPrimaryKey ? GetPrimaryKeyColumns(destinationTableName, destinationConnection) : null;
+
             Stopwatch rowWatch = new();
 
             // Get the total count of rows from the source table
@@ -95,7 +108,7 @@ namespace Clone_ADS_DB
                     // Copy the data to the destination table and measure the time taken
                     using (NpgsqlTransaction transaction = destinationConnection.BeginTransaction())
                     {
-                        using (NpgsqlCommand upsertCommand = new(BuildUpsertCommand(destinationTableName, schemaTable), destinationConnection))
+                        using (NpgsqlCommand upsertCommand = new(BuildUpsertCommand(destinationTableName, schemaTable, primaryKeyColumns), destinationConnection))
                         {
                             foreach (DataColumn column in schemaTable.Columns)
                             {
@@ -112,7 +125,6 @@ namespace Clone_ADS_DB
                                         value = string.IsNullOrWhiteSpace(stringValue) ? DBNull.Value : stringValue.Trim();
                                     }
                                     upsertCommand.Parameters[$"@{column.ColumnName}"].Value = value;
-
                                 }
 
                                 _ = upsertCommand.ExecuteNonQuery();
@@ -149,6 +161,7 @@ namespace Clone_ADS_DB
                 }
             }
         }
+
         public static List<IndexInfo> GetIndexesFromSource(string tableName, OdbcConnection sourceConnection)
         {
             List<IndexInfo> indexes = new();
@@ -190,52 +203,75 @@ namespace Clone_ADS_DB
             return rowCount;
         }
 
-
         public static void CopyTable(string tableName, OdbcConnection sourceConnection, NpgsqlConnection destinationConnection)
         {
             string sourceTableName = tableName.ToUpper();
             string destinationTableName = ConvertToDestinationFilename(sourceTableName);
 
-            // Retrieve the schema and column information from the source table
-            try
+            bool tableExists = CheckIfTableExists(destinationTableName, destinationConnection);
+
+            // If the table doesn't exist, create it based on the source schema
+            if (!tableExists)
             {
-                Stopwatch tableWatch = new();
-                Stopwatch totalWatch = new();
-                string elapsedTime = null;
-                totalWatch.Start();
-
-                tableWatch.Start();
-                // Gather the Schema Information
-                OdbcCommand schemaCommand = new($"SELECT TOP 1 * FROM {sourceTableName}", sourceConnection);
-                OdbcDataAdapter schemaAdapter = new(schemaCommand);
-                DataTable schemaTable = new();
-                _ = schemaAdapter.FillSchema(schemaTable, SchemaType.Source);
-
-                CreateTableFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
-                if (AppConfiguration.DebugMode)
+                try
                 {
-                    tableWatch.Stop();
-                    elapsedTime = PrettyFormatTime(tableWatch.ElapsedMilliseconds);
-                    Console.WriteLine($"\r{destinationTableName}: table created - Time taken to create: {elapsedTime}".PadRight(Console.WindowWidth - 1));
+                    Stopwatch totalWatch = new();
+                    totalWatch.Start();
+
+                    // Gather the Schema Information
+                    OdbcCommand schemaCommand = new($"SELECT TOP 1 * FROM {sourceTableName}", sourceConnection);
+                    OdbcDataAdapter schemaAdapter = new(schemaCommand);
+                    DataTable schemaTable = new();
+                    _ = schemaAdapter.FillSchema(schemaTable, SchemaType.Source);
+
+                    CreateTableFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
+
+                    // Truncate the destination table - clears out the old data. (This can be removed when "upserts" work)
+                    EmptyDestinationTable(destinationTableName, destinationConnection);
+
+                    // Now copy the data from the source table to the destination table
+                    try
+                    {
+                        CopyDataFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
+                    }
+                    catch (OdbcException ex)
+                    {
+                        // Handle the exception if there's an error while copying the data
+                        Console.WriteLine($"\rFailed to copy data for table '{tableName}': {ex.Message}".PadRight(Console.WindowWidth - 1));
+                    }
                 }
-
-                // Truncate the destination table - clears out the old data.  needs removing when "upserts" work
-                EmptyDestinationTable(destinationTableName, destinationConnection);
-
-                // Now copy the data
-                CopyDataFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
-
-                totalWatch.Stop();
-                elapsedTime = PrettyFormatTime(totalWatch.ElapsedMilliseconds);
-                Console.WriteLine($"\r{destinationTableName}: Total Time taken: {elapsedTime}".PadRight(Console.WindowWidth - 1));
-            }
-            catch (OdbcException ex)
-            {
-                // Handle the exception if the table is encrypted or any other ODBC-related errors
-                Console.WriteLine($"\rSkipping table '{tableName}' due to an error: {ex.Message}".PadRight(Console.WindowWidth - 1));
+                catch (OdbcException ex)
+                {
+                    // Handle the exception if the table is encrypted or any other ODBC-related errors
+                    Console.WriteLine($"\rSkipping table '{tableName}' due to an error: {ex.Message}".PadRight(Console.WindowWidth - 1));
+                }
             }
         }
 
+        public static bool CheckIfTableExists(string tableName, NpgsqlConnection connection)
+        {
+            using NpgsqlCommand command = new($"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{tableName}')", connection);
+            return (bool)command.ExecuteScalar();
+        }
+
+        public static bool CheckIfTableHasPrimaryKey(string tableName, NpgsqlConnection connection)
+        {
+            using NpgsqlCommand command = new($"SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_name = '{tableName}' AND constraint_type = 'PRIMARY KEY'", connection);
+            int count = Convert.ToInt32(command.ExecuteScalar());
+            return count > 0;
+        }
+
+        public static string GetPrimaryKeyColumns(string tableName, NpgsqlConnection connection)
+        {
+            using NpgsqlCommand command = new($"SELECT a.attname FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) WHERE i.indrelid = '{tableName}'::regclass AND i.indisprimary;", connection);
+            using NpgsqlDataReader reader = command.ExecuteReader();
+            List<string> primaryKeyColumns = new();
+            while (reader.Read())
+            {
+                primaryKeyColumns.Add(reader.GetString(0));
+            }
+            return string.Join(", ", primaryKeyColumns);
+        }
 
     }
 }

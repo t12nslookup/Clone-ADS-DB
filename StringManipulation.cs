@@ -34,9 +34,8 @@ namespace Clone_ADS_DB
             return createTableQuery;
         }
 
-        public static string BuildUpsertCommand(string tableName, DataTable schemaTable)
+        public static string BuildUpsertCommand(string tableName, DataTable schemaTable, string primaryKeyColumns)
         {
-            // string primaryKeyColumn = GetPrimaryKeyColumns(schemaTable.TableName);
             string[] columnNames = schemaTable.Columns.Cast<DataColumn>().Select(c => $"\"{c.ColumnName.ToLower()}\"").ToArray();
             string insertColumns = string.Join(", ", columnNames);
             string updateColumns = string.Join(", ", columnNames.Select(c => $"{c} = EXCLUDED.{c}"));
@@ -44,9 +43,14 @@ namespace Clone_ADS_DB
             string[] parameterPlaceholders = schemaTable.Columns.Cast<DataColumn>().Select(c => $":{c.ColumnName}").ToArray();
             string insertValues = string.Join(", ", parameterPlaceholders);
 
-            return $"INSERT INTO {tableName} ({insertColumns}) VALUES ({insertValues}) ";
+            string upsertCommand = $"INSERT INTO {tableName} ({insertColumns}) VALUES ({insertValues})";
+
             // UpSerts need constraints/indexes in place
-            // + $"ON CONFLICT ({primaryKeyColumn}) DO UPDATE SET {updateColumns}";
+            if (!string.IsNullOrEmpty(primaryKeyColumns))
+            {
+                upsertCommand += $" ON CONFLICT ({primaryKeyColumns}) DO UPDATE SET {updateColumns}";
+            }
+            return upsertCommand;
         }
 
         public static string GetPostgreSQLType(DataColumn column)
