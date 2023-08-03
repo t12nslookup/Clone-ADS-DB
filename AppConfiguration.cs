@@ -20,17 +20,16 @@ namespace Clone_ADS_DB
             }
         }
 
-        public static bool DebugMode
+        public static bool DebugMode { get; private set; }
+        public static bool EchoMode { get; private set; }
+        public static void SetDebugMode(bool value)
         {
-            get
-            {
-                if (config == null)
-                {
-                    LoadConfiguration();
-                }
+            DebugMode = value;
+        }
 
-                return config.DebugMode == "true";
-            }
+        public static void SetEchoMode(bool value)
+        {
+            EchoMode = value;
         }
 
         private static void LoadConfiguration()

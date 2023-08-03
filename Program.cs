@@ -1,4 +1,5 @@
-﻿using Npgsql;
+﻿using CommandLine;
+using Npgsql;
 using System;
 using System.Data.Odbc;
 
@@ -14,23 +15,32 @@ namespace Clone_ADS_DB
                 return;
             }
             Configuration config = AppConfiguration.Config;
+            string command = "";
+
+            // Parse the command-line arguments and store them in the options object
+            _ = Parser.Default.ParseArguments<Options>(args)
+                .WithParsed(options =>
+                {
+                    // Access the parsed options
+                    command = options.Command.ToLower();
+
+                    // Set the DebugMode and EchoMode in AppConfiguration
+                    AppConfiguration.SetDebugMode(options.DebugMode);
+                    AppConfiguration.SetEchoMode(options.EchoMode);
+                })
+                .WithNotParsed(errors =>
+                {
+                    // Handle any parsing errors if needed
+                    Console.WriteLine("Invalid command-line arguments.");
+                    ShowHelp();
+                });
 
             using OdbcConnection sourceConnection = new(config.SourceConnectionString);
             using NpgsqlConnection destinationConnection = new(config.DestinationConnectionString);
 
-            string command = args[0].ToLower();
-
             switch (command)
             {
                 case "initial":
-                    /*
-                    if (args.Length != 2)
-                    {
-                        Console.WriteLine("Invalid number of arguments for 'copy' command.");
-                        ShowHelp();
-                        return;
-                    }
-                    */
 
                     sourceConnection.Open();
                     destinationConnection.Open();
@@ -73,7 +83,8 @@ namespace Clone_ADS_DB
             // Add more commands with descriptions as needed
         }
 
-        private static string GetPrimaryKeyColumns(string tableName)
+        // At some time in the future it might be good to suggest columns to be used as the primary key for new tables
+        private static string GetSourcePrimaryKeyColumns(string tableName)
         {
             // Assuming you have a single primary key column named "id", you can adjust this based on your table's primary key.
             return tableName.ToLower() switch
@@ -82,8 +93,6 @@ namespace Clone_ADS_DB
                 // Add more mappings for other data types as needed
                 _ => "id",
             };
-
         }
-
     }
 }

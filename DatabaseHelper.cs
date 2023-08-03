@@ -14,6 +14,17 @@ namespace Clone_ADS_DB
         // Add the methods related to database operations, such as CreateTableFromSource, EmptyDestinationTable, CopyDataFromSource,
         // GetIndexesFromSource, GenerateCreateIndexStatements, and other relevant methods.
         // You can also include the Configuration and IndexInfo classes from the Types.cs file in this project.
+        public static void ExecuteStatement(NpgsqlCommand command)
+        {
+            if (AppConfiguration.EchoMode)
+            {
+                Console.WriteLine($"\rExecuting SQL: {command.CommandText}");
+            }
+            else
+            {
+                _ = command.ExecuteNonQuery();
+            }
+        }
 
         public static void CreateTableFromSource(DataTable schemaTable, string destinationTableName, OdbcConnection sourceConnection, NpgsqlConnection destinationConnection)
         {
@@ -22,7 +33,7 @@ namespace Clone_ADS_DB
 
             // Create a new table in the destination database based on the source schema
             NpgsqlCommand createTableCommand = new(GenerateCreateTableQuery(destinationTableName, schemaTable), destinationConnection);
-            _ = createTableCommand.ExecuteNonQuery();
+            ExecuteStatement(createTableCommand);
 
             // Retrieve index information from the source database
             List<IndexInfo> sourceIndexes = GetIndexesFromSource(schemaTable.TableName, sourceConnection);
@@ -36,7 +47,7 @@ namespace Clone_ADS_DB
                 try
                 {
                     using NpgsqlCommand createIndexCommand = new(createIndexStatement, destinationConnection);
-                    _ = createIndexCommand.ExecuteNonQuery();
+                    ExecuteStatement(createIndexCommand);
                     if (AppConfiguration.DebugMode)
                     {
                         Console.WriteLine($"\rIndex created successfully: {createIndexStatement}".PadRight(Console.WindowWidth - 1));
@@ -65,7 +76,7 @@ namespace Clone_ADS_DB
         public static void EmptyDestinationTable(string destinationTableName, NpgsqlConnection destinationConnection)
         {
             NpgsqlCommand truncateCommand = new($"TRUNCATE TABLE {destinationTableName}", destinationConnection);
-            _ = truncateCommand.ExecuteNonQuery();
+            ExecuteStatement(truncateCommand);
         }
 
         public static void CopyDataFromSource(DataTable schemaTable, string destinationTableName, OdbcConnection sourceConnection, NpgsqlConnection destinationConnection)
@@ -127,7 +138,7 @@ namespace Clone_ADS_DB
                                     upsertCommand.Parameters[$"@{column.ColumnName}"].Value = value;
                                 }
 
-                                _ = upsertCommand.ExecuteNonQuery();
+                                ExecuteStatement(upsertCommand);
                             }
                         }
 
@@ -210,41 +221,42 @@ namespace Clone_ADS_DB
 
             bool tableExists = CheckIfTableExists(destinationTableName, destinationConnection);
 
-            // If the table doesn't exist, create it based on the source schema
-            if (!tableExists)
+            try
             {
-                try
-                {
-                    Stopwatch totalWatch = new();
-                    totalWatch.Start();
+                Stopwatch totalWatch = new();
+                totalWatch.Start();
 
-                    // Gather the Schema Information
-                    OdbcCommand schemaCommand = new($"SELECT TOP 1 * FROM {sourceTableName}", sourceConnection);
-                    OdbcDataAdapter schemaAdapter = new(schemaCommand);
-                    DataTable schemaTable = new();
-                    _ = schemaAdapter.FillSchema(schemaTable, SchemaType.Source);
+                // Gather the Schema Information
+                OdbcCommand schemaCommand = new($"SELECT TOP 1 * FROM {sourceTableName}", sourceConnection);
+                OdbcDataAdapter schemaAdapter = new(schemaCommand);
+                DataTable schemaTable = new();
+                _ = schemaAdapter.FillSchema(schemaTable, SchemaType.Source);
+
+                // If the table doesn't exist, create it based on the source schema
+                if (!tableExists)
+                {
 
                     CreateTableFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
+                }
 
-                    // Truncate the destination table - clears out the old data. (This can be removed when "upserts" work)
-                    EmptyDestinationTable(destinationTableName, destinationConnection);
+                // Truncate the destination table - clears out the old data. (This can be removed when "upserts" work)
+                EmptyDestinationTable(destinationTableName, destinationConnection);
 
-                    // Now copy the data from the source table to the destination table
-                    try
-                    {
-                        CopyDataFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
-                    }
-                    catch (OdbcException ex)
-                    {
-                        // Handle the exception if there's an error while copying the data
-                        Console.WriteLine($"\rFailed to copy data for table '{tableName}': {ex.Message}".PadRight(Console.WindowWidth - 1));
-                    }
+                // Now copy the data from the source table to the destination table
+                try
+                {
+                    CopyDataFromSource(schemaTable, destinationTableName, sourceConnection, destinationConnection);
                 }
                 catch (OdbcException ex)
                 {
-                    // Handle the exception if the table is encrypted or any other ODBC-related errors
-                    Console.WriteLine($"\rSkipping table '{tableName}' due to an error: {ex.Message}".PadRight(Console.WindowWidth - 1));
+                    // Handle the exception if there's an error while copying the data
+                    Console.WriteLine($"\rFailed to copy data for table '{tableName}': {ex.Message}".PadRight(Console.WindowWidth - 1));
                 }
+            }
+            catch (OdbcException ex)
+            {
+                // Handle the exception if the table is encrypted or any other ODBC-related errors
+                Console.WriteLine($"\rSkipping table '{tableName}' due to an error: {ex.Message}".PadRight(Console.WindowWidth - 1));
             }
         }
 
