@@ -41,7 +41,7 @@ namespace Clone_ADS_DB
             // Generate SQL statements for index creation on the destination database
             List<string> createIndexStatements = GenerateCreateIndexStatements(destinationTableName, sourceIndexes);
 
-            // Execute the generated SQL statements on the destination database
+            // Execute the index creation SQL statements on the destination database
             foreach (string createIndexStatement in createIndexStatements)
             {
                 try
@@ -61,15 +61,15 @@ namespace Clone_ADS_DB
                         Console.WriteLine($"\rFailed to create index: {createIndexStatement}".PadRight(Console.WindowWidth - 1));
                         Console.WriteLine($"\rError: {ex.Message}".PadRight(Console.WindowWidth - 1));
                     }
-
                 }
-                if (AppConfiguration.DebugMode)
-                {
-                    tableWatch.Stop();
-                    string elapsedTime = PrettyFormatTime(tableWatch.ElapsedMilliseconds);
-                    Console.WriteLine($"\r{destinationTableName}: Table created - Time taken to create: {elapsedTime}".PadRight(Console.WindowWidth - 1));
-                }
+            }
 
+            // Output text showing the time for table + index creation
+            if (AppConfiguration.DebugMode)
+            {
+                tableWatch.Stop();
+                string elapsedTime = PrettyFormatTime(tableWatch.ElapsedMilliseconds);
+                Console.WriteLine($"\r{destinationTableName}: Table created - Time taken to create: {elapsedTime}".PadRight(Console.WindowWidth - 1));
             }
         }
 
@@ -133,6 +133,7 @@ namespace Clone_ADS_DB
                                     object value = row[column.ColumnName];
                                     if (value is string stringValue)
                                     {
+                                        // trim the string value, and if it's empty replace it with a Null
                                         value = string.IsNullOrWhiteSpace(stringValue) ? DBNull.Value : stringValue.Trim();
                                     }
                                     upsertCommand.Parameters[$"@{column.ColumnName}"].Value = value;
